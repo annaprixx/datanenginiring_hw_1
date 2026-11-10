@@ -1,0 +1,85 @@
+name: dbt_shop
+
+# OLTP (PostgreSQL) → loader → raw (Greenplum) → dbt → analytics_* (Greenplum)
+
+services:
+  # Источник: OLTP-база интернет-магазина, те же данные, что в практике 2.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: student
+      POSTGRES_PASSWORD: studentpass
+    ports:
+      - "${PG_PORT:-5436}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U student -d shop"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Хранилище: Greenplum. Сюда загружаются сырые данные (схема raw)
+  # и здесь dbt строит аналитический слой (схемы analytics_*).
+  greenplum:
+    image: andruche/greenplum:7-4seg@sha256:620d6c4863520685d6b475044195f766d3dfbc7c5a3fcfe965c8ac64f2ba47aa
+    hostname: gp-dwh
+    shm_size: 512mb
+    ports:
+      - "${GP_PORT:-5440}:5432"
+    volumes:
+      - gp_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/local/gpdb/bin/psql -h 127.0.0.1 -U gpadmin -d postgres -Atc 'select 1' | grep -qx 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+
+  # Загрузка OLTP → Greenplum (raw). Запускается сама при docker compose up,
+  # повторно: docker compose run --rm loader
+  loader:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+      greenplum:
+        condition: service_healthy
+    environment:
+      PGOPTIONS: "-c client_min_messages=warning"
+    volumes:
+      - ./init/greenplum:/init:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ "$$(psql -h greenplum -U gpadmin -d postgres -Atc "select 1 from pg_database where datname = 'dwh'")" != "1" ]; then
+          psql -h greenplum -U gpadmin -d postgres -v ON_ERROR_STOP=1 -c 'create database dwh'
+        fi
+        psql -h greenplum -U gpadmin -d dwh -v ON_ERROR_STOP=1 -q -f /init/load_raw.sql
+        echo "Готово: в Greenplum, база dwh, схема raw загружено строк:"
+        psql -h greenplum -U gpadmin -d dwh -At -F ' ' -c "select 'orders', count(*) from raw.orders union all select 'order_items', count(*) from raw.order_items union all select 'payments', count(*) from raw.payments union all select 'customers', count(*) from raw.customers"
+    restart: "no"
+
+  # dbt в контейнере. Запуск: docker compose run --rm dbt <команда>
+  dbt:
+    build: .
+    image: dbt-shop:1.10
+    profiles: ["tools"]
+    depends_on:
+      greenplum:
+        condition: service_healthy
+    environment:
+      DBT_HOST: greenplum
+      DBT_PORT: "5432"
+      DBT_PROFILES_DIR: /project
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+      DBT_VERSION_CHECK: "false"
+    volumes:
+      - .:/project
+    ports:
+      - "${DOCS_PORT:-8080}:8080"
+
+volumes:
+  pg_data:
+  gp_data:

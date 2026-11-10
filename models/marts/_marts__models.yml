@@ -1,0 +1,200 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: >
+      Факт заказов: одна строка — один заказ. Тестовые заказы исключены.
+      К заказу пристыкованы итоги по платежам и число товаров.
+      Отвечает на вопросы про число заказов, средний чек и выручку по датам и клиентам.
+    columns:
+      - name: order_id
+        description: "Номер заказа. Первичный ключ витрины."
+        data_tests: [unique, not_null]
+      - name: customer_id
+        description: "Клиент, оформивший заказ."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: order_date
+        description: "Дата заказа. Ключ на календарь."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: ordered_at
+        description: "Время оформления заказа."
+      - name: order_status
+        description: "Статус заказа: paid, pending, returned, cancelled."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'pending', 'returned', 'cancelled']
+      - name: order_amount
+        description: "Сумма заказа в рублях после скидок."
+        data_tests: [non_negative]
+      - name: paid_amount
+        description: "Сумма успешных оплат без возвратов; 0, если оплат нет."
+      - name: refunded_amount
+        description: "Сумма возвратов положительным числом; 0, если возвратов нет."
+      - name: net_paid_amount
+        description: "Оплачено минус возвращено. У полностью возвращённого заказа равно 0."
+      - name: successful_payments_count
+        description: "Число успешных оплат без возвратов."
+      - name: first_paid_at
+        description: "Время первой успешной оплаты; пусто, если оплат нет."
+      - name: items_count
+        description: "Число разных товаров в заказе."
+        data_tests: [non_negative]
+      - name: is_confirmed
+        description: '{{ doc("confirmed_order") }}'
+        data_tests: [not_null]
+
+  - name: fct_order_items
+    description: >
+      Факт позиций заказа: одна строка — один товар в заказе. Тестовые заказы исключены.
+      Самая детальная витрина: отвечает на вопросы про выручку по товарам, категориям и брендам.
+      Инкрементальная модель: при повторном запуске дописываются позиции новых заказов.
+    columns:
+      - name: order_item_id
+        description: "Ключ позиции вида 101-1: номер заказа и номер товара через дефис. Первичный ключ витрины."
+        data_tests: [unique, not_null]
+      - name: order_id
+        description: "Заказ, в который входит позиция."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: product_id
+        description: "Товар в позиции."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: customer_id
+        description: "Клиент, оформивший заказ."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: order_date
+        description: "Дата заказа. Ключ на календарь."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: ordered_at
+        description: "Время оформления заказа. По нему инкрементальная модель отбирает новые строки."
+      - name: quantity
+        description: "Количество единиц товара в позиции."
+        data_tests: [non_negative]
+      - name: unit_price
+        description: "Цена за единицу товара в рублях."
+      - name: discount_amount
+        description: "Скидка по позиции в рублях."
+      - name: gross_amount
+        description: "Сумма позиции до скидки: количество × цена."
+      - name: line_amount
+        description: "Сумма позиции после скидки. Сумма line_amount заказа равна его order_amount."
+        data_tests: [non_negative]
+      - name: is_confirmed
+        description: '{{ doc("confirmed_order") }}'
+        data_tests: [not_null]
+
+  - name: dim_customers
+    description: >
+      Измерение клиентов: одна строка — один клиент, включая тех, кто ничего не купил.
+      Отвечает на вопросы про долю покупателей по каналам привлечения и средний чек по городам.
+    columns:
+      - name: customer_id
+        description: "Номер клиента. Первичный ключ витрины."
+        data_tests: [unique, not_null]
+      - name: registered_at
+        description: "Время регистрации клиента."
+      - name: registration_date
+        description: "Дата регистрации без времени."
+      - name: city
+        description: "Город клиента."
+      - name: acquisition_channel
+        description: "Канал привлечения: search, email, organic, social, ads, partner."
+      - name: first_confirmed_order_id
+        description: "Номер первой подтверждённой покупки; пусто у клиента без покупок."
+      - name: first_confirmed_at
+        description: "Время первой подтверждённой покупки; пусто у клиента без покупок."
+      - name: confirmed_orders_count
+        description: "Число подтверждённых покупок клиента; 0, если покупок нет."
+        data_tests: [not_null, non_negative]
+      - name: confirmed_revenue
+        description: "Сумма подтверждённых покупок клиента; 0, если покупок нет."
+        data_tests: [not_null, non_negative]
+      - name: is_buyer
+        description: "У клиента есть хотя бы одна подтверждённая покупка."
+        data_tests: [not_null]
+
+  - name: dim_products
+    description: >
+      Измерение товаров: одна строка — один товар. Иерархия категорий развёрнута в колонки.
+      Отвечает на вопросы про выручку и возвраты по категориям и брендам.
+    columns:
+      - name: product_id
+        description: "Номер товара. Первичный ключ витрины."
+        data_tests: [unique, not_null]
+      - name: product_name
+        description: "Название товара."
+      - name: brand
+        description: "Бренд товара."
+      - name: category_name
+        description: "Категория товара — нижний уровень дерева."
+        data_tests: [not_null]
+      - name: parent_category_name
+        description: "Родительская категория; пусто, если товар лежит в категории верхнего уровня."
+      - name: root_category_name
+        description: "Категория верхнего уровня: Electronics или Home."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Electronics', 'Home']
+      - name: category_level
+        description: "Глубина категории в дереве: 1 — верхний уровень."
+      - name: category_path
+        description: "Путь от корня до категории, например Home > Kitchen > Cookware."
+
+  - name: dim_dates
+    description: >
+      Календарь: одна строка — один день. Покрывает все даты заказов, включая дни без заказов.
+      Отвечает на вопросы про выручку по месяцам, кварталам и будням с выходными.
+    columns:
+      - name: date_day
+        description: "Дата. Первичный ключ витрины."
+        data_tests: [unique, not_null]
+      - name: year_number
+        description: "Год."
+      - name: quarter_number
+        description: "Номер квартала: 1–4."
+      - name: month_number
+        description: "Номер месяца: 1–12."
+      - name: month_name
+        description: "Название месяца."
+      - name: year_month
+        description: "Год и месяц в виде 2026-03: удобно группировать выручку по месяцам."
+      - name: day_of_month
+        description: "День месяца: 1–31."
+      - name: day_of_week
+        description: "День недели: 1 — понедельник, 7 — воскресенье."
+      - name: day_name
+        description: "Название дня недели."
+      - name: is_weekend
+        description: "Выходной: суббота или воскресенье."
+        data_tests: [not_null]

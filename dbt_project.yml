@@ -1,0 +1,26 @@
+name: dbt_shop
+version: "1.0.0"
+profile: dbt_shop
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+# Каждый слой — в своей схеме и со своей материализацией.
+# Схемы в базе: analytics_staging, analytics_intermediate, analytics_marts.
+models:
+  dbt_shop:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+
+# Таблицы с «плохими» строками упавших тестов: схема analytics_dbt_test__audit.
+data_tests:
+  +store_failures: true

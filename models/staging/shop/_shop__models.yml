@@ -1,0 +1,126 @@
+version: 2
+
+models:
+  - name: stg_shop__orders
+    description: "Заказы из источника: одна строка — один заказ."
+    columns:
+      - name: order_id
+        description: "Номер заказа."
+        data_tests: [unique, not_null]
+      - name: customer_id
+        description: "Клиент, оформивший заказ."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_shop__customers')
+                field: customer_id
+      - name: order_status
+        description: "Статус заказа. test — тестовые заказы: в источнике они есть, в аналитику не попадают."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'pending', 'returned', 'cancelled', 'test']
+      - name: order_amount
+        description: "Сумма заказа в рублях после скидок."
+        data_tests: [non_negative]
+      - name: order_date
+        description: "Дата заказа без времени."
+      - name: is_test_order
+        description: "Тестовый заказ: статус test."
+
+  - name: stg_shop__customers
+    description: "Клиенты из источника: одна строка — один клиент."
+    columns:
+      - name: customer_id
+        description: "Номер клиента."
+        data_tests: [unique, not_null]
+      - name: registration_date
+        description: "Дата регистрации без времени."
+      - name: city
+        description: "Город клиента."
+      - name: acquisition_channel
+        description: "Канал привлечения клиента."
+
+  - name: stg_shop__order_items
+    description: "Позиции заказов: одна строка — один товар в заказе."
+    columns:
+      - name: order_item_id
+        description: "Ключ позиции вида 101-1: номер заказа и номер товара через дефис."
+        data_tests: [unique, not_null]
+      - name: order_id
+        description: "Заказ, в который входит позиция."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_shop__orders')
+                field: order_id
+      - name: product_id
+        description: "Товар в позиции."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_shop__products')
+                field: product_id
+      - name: gross_amount
+        description: "Сумма позиции до скидки: количество × цена."
+      - name: line_amount
+        description: "Сумма позиции после скидки."
+
+  - name: stg_shop__payments
+    description: "Платёжные операции: одна строка — одна операция. У заказа их может быть несколько."
+    columns:
+      - name: payment_id
+        description: "Номер операции."
+        data_tests: [unique, not_null]
+      - name: order_id
+        description: "Заказ, к которому относится операция."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_shop__orders')
+                field: order_id
+      - name: payment_status
+        description: "Статус операции."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['success', 'failed', 'pending']
+      - name: is_refund
+        description: "Возврат: успешная операция с отрицательной суммой."
+
+  - name: stg_shop__products
+    description: "Товары из источника: одна строка — один товар."
+    columns:
+      - name: product_id
+        description: "Номер товара."
+        data_tests: [unique, not_null]
+      - name: product_name
+        description: "Название товара."
+      - name: brand
+        description: "Бренд товара."
+      - name: category_name
+        description: "Название категории товара: в источнике категория записана текстом."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_shop__product_categories')
+                field: category_name
+
+  - name: stg_shop__product_categories
+    description: "Категории товаров из источника: одна строка — одна категория дерева."
+    columns:
+      - name: category_id
+        description: "Номер категории."
+        data_tests: [unique, not_null]
+      - name: parent_category_id
+        description: "Родительская категория; пусто у категории верхнего уровня."
+      - name: category_name
+        description: "Название категории."
+        data_tests: [unique, not_null]
+      - name: is_root_category
+        description: "Категория верхнего уровня: родителя нет."

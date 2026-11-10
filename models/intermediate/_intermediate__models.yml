@@ -1,0 +1,85 @@
+version: 2
+
+models:
+  - name: int_orders_with_payments
+    description: >
+      Одна строка — один заказ (включая тестовые), к нему пристыкованы итоги по платежам.
+      Платежи сначала свёрнуты до заказа, потом присоединены left join: заказ без платежей не теряется.
+    columns:
+      - name: order_id
+        description: "Номер заказа."
+        data_tests: [unique, not_null]
+      - name: successful_payments_count
+        description: "Число успешных оплат без возвратов."
+      - name: paid_amount
+        description: "Сумма успешных оплат без возвратов; 0, если оплат нет."
+      - name: refunded_amount
+        description: "Сумма возвратов положительным числом."
+      - name: net_paid_amount
+        description: "Оплачено минус возвращено."
+      - name: is_confirmed
+        description: '{{ doc("confirmed_order") }}'
+      - name: success_operations_count
+        description: "Число операций в статусе success, включая возвраты."
+      - name: failed_operations_count
+        description: "Число неуспешных операций."
+      - name: pending_operations_count
+        description: "Число операций в ожидании."
+
+  - name: int_order_items_enriched
+    description: >
+      Одна строка — один товар в заказе. К позиции добавлены атрибуты заказа:
+      клиент, дата, статус и признак подтверждённой покупки.
+    columns:
+      - name: order_item_id
+        description: "Ключ позиции вида 101-1."
+        data_tests: [unique, not_null]
+      - name: is_test_order
+        description: "Позиция относится к тестовому заказу: в витрину не попадает."
+
+  - name: int_order_items_rollup
+    description: "Одна строка — один заказ: позиции, свёрнутые до заказа."
+    columns:
+      - name: order_id
+        description: "Номер заказа."
+        data_tests: [unique, not_null]
+      - name: items_count
+        description: "Число разных товаров в заказе."
+      - name: units_count
+        description: "Число единиц товара в заказе."
+      - name: items_amount
+        description: "Сумма позиций заказа после скидок."
+
+  - name: int_category_hierarchy
+    description: >
+      Одна строка — одна категория. Дерево из parent_category_id развёрнуто рекурсивным CTE
+      в плоские колонки: родитель, корень и уровень. Новый уровень в источнике модель не сломает.
+    columns:
+      - name: category_id
+        description: "Номер категории."
+        data_tests: [unique, not_null]
+      - name: parent_category_name
+        description: "Название родительской категории; пусто у категории верхнего уровня."
+      - name: root_category_name
+        description: "Название категории верхнего уровня: Electronics или Home."
+      - name: category_level
+        description: "Глубина категории в дереве: 1 — верхний уровень."
+      - name: category_path
+        description: "Путь от корня до категории, например Home > Kitchen > Cookware."
+
+  - name: int_customer_order_stats
+    description: >
+      Одна строка — один клиент с подтверждёнными покупками. Клиенты без покупок сюда не попадают:
+      их добавляет dim_customers.
+    columns:
+      - name: customer_id
+        description: "Номер клиента."
+        data_tests: [unique, not_null]
+      - name: confirmed_orders_count
+        description: "Число подтверждённых покупок клиента."
+      - name: confirmed_revenue
+        description: "Сумма подтверждённых покупок клиента."
+      - name: first_confirmed_order_id
+        description: "Номер первой подтверждённой покупки."
+      - name: first_confirmed_at
+        description: "Время оформления первой подтверждённой покупки."
