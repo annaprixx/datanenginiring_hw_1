@@ -4,3 +4,5 @@ logs/
 .venv/
 .DS_Store
 .user.yml
+checks.log
+__pycache__/
